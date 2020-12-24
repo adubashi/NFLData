@@ -13,12 +13,6 @@ from pandas import Series
 from pandas.io.json import json_normalize
 import math
 
-def get_quote(df, displayName):
-    return df[displayName]
-
-def pass_arrived(event):
-    return event == "pass_arrived"
-
 def get_tracking_csv_for_game_id(game_id):
     list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
     game_id = int(game_id)
@@ -38,7 +32,6 @@ def create_game_id_to_tracking_csv_map():
         print(k)
         game_list.at[i, "tracking_csv_file_name"] = get_tracking_csv_for_game_id(game_Id)
     game_list.to_csv("game_list_to_file_name.csv")
-
 
 
 
@@ -125,7 +118,7 @@ def calculate(game_id):
 
     #Write the data
     epa_game_report.to_csv(game_id + "-" + "epa_game_report.csv")
-    
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     now = datetime.now()
