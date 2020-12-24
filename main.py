@@ -125,24 +125,7 @@ def calculate(game_id):
 
     #Write the data
     epa_game_report.to_csv(game_id + "-" + "epa_game_report.csv")
-
-
-'''
-def calculate2():
-    players = pd.read_csv("nfl-big-data-bowl-2021/players.csv")
-    games = pd.read_csv("nfl-big-data-bowl-2021/games.csv")
-    cleaned_play_data = pd.read_csv("cleaned_play_data.csv")
-    for i, row in cleaned_play_data.iterrows():
-        game_Id = cleaned_play_data.at[i, "gameId"]
-        homeTeam = games.query('gameId == @game_Id').iloc[0].at["homeTeamAbbr"]
-        awayTeam = games.query('gameId == @game_Id').iloc[0].at["visitorTeamAbbr"]
-        if homeTeam == cleaned_play_data.at[i, "possessionTeam"]:
-           cleaned_play_data.at[i, "defenseTeam"] = awayTeam
-        else:
-           cleaned_play_data.at[i, "defenseTeam"] = homeTeam
-    cleaned_play_data.to_csv("cleaned_play_data_2.csv")
-'''
-
+    
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     now = datetime.now()
