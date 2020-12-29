@@ -7,11 +7,15 @@ from datetime import datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
+
 import json
 import pytz
 from pandas import Series
 from pandas.io.json import json_normalize
+import numpy as np
+import matplotlib.pyplot as plt
 import math
+import scipy.stats
 
 def get_tracking_csv_for_game_id(game_id):
     list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
@@ -53,8 +57,6 @@ def calculate(game_id):
     tracking = tracking.query('gameId == @game_id')
     plays = plays.query('gameId == @game_id')
 
-    print("MADE IT HERE - 1")
-
     ##Generate Football Distance for Pass Arrived And Interceptions
     football_Name = "Football"
     for i, row in tracking.iterrows():
@@ -78,9 +80,6 @@ def calculate(game_id):
             xFootballPosition = int(football_event.iloc[0].at["x"])
             yFootballPosition = int(football_event.iloc[0].at["y"])
             tracking.at[i, "total_distance_from_football_pass_arrived"] = math.sqrt((xFootballPosition - xPosition) ** 2 + ((yFootballPosition - yPosition) ** 2))
-
-    print("MADE IT HERE - 2")
-
 
     ##Generate player in coverage.
     for i, row in tracking.iterrows():
@@ -162,7 +161,6 @@ def calculate(game_id):
     for i, row in cleaned_play_data.iterrows():
         penaltyCodesFromRow = cleaned_play_data.at[i, "penaltyJerseyNumbers"]
         if not pd.isna(penaltyCodesFromRow):
-            print(penaltyCodesFromRow)
             rows = players_by_game.query("penaltyAbbr in @penaltyCodesFromRow")
             if (rows.count() != 0).any():
                 playerName = rows.iloc[0].at["displayName"]
@@ -170,10 +168,15 @@ def calculate(game_id):
 
     ##Generate the epa data by defensive players.
     epa_game_report = cleaned_play_data.groupby(['player_in_coverage','defenseTeam'])[['epa']].agg('sum').reset_index();
+
     for i, row in epa_game_report.iterrows():
         playerName = epa_game_report.at[i, "player_in_coverage"]
+        playerInCoverage = epa_game_report.at[i, "player_in_coverage"]
         playerRow = players.query("@playerName == displayName")
         epa_game_report.at[i, "nflId"] = playerRow.iloc[0].at["nflId"]
+        df = cleaned_play_data.query("@playerInCoverage == player_in_coverage")
+        epa_game_report.at[i, "epa_play_count"] = len(df.index)
+        epa_game_report.at[i, "epa_per_targeted_play"] = epa_game_report.at[i, "epa"]/len(df.index)
 
     #Write the data
     epa_game_report.to_csv(game_id + "-" + "epa_game_report.csv")
@@ -182,10 +185,69 @@ def calculate(game_id):
     tracking.to_csv(game_id + "-" + "tracking_data.csv")
     players_by_game.to_csv(game_id + "-" + "players_by_game_report.csv")
 
+def plot_game_id(game_id):
+    plotDF = pd.read_csv(game_id + "-epa_game_report.csv")
+    print(plotDF)
+    plotDF = plotDF.loc[plotDF['epa_play_count'] > 3]
+    plotDF.sort_values("epa_per_targeted_play", ascending=True)
+    plotDF.plot.bar(x="player_in_coverage", y="epa_per_targeted_play", rot=0, title="EPA by Player")
+    plt.xticks(rotation=90)
+    plt.show()
+
+
+def calculate_and_plot(game_id):
+    calculate(game_id)
+    plot_game_id(game_id)
+
+
+def plot():
+    ###
+    ### Coverage
+    # initialize list of lists
+    data_falcons = [['Deion Jones', 90.5], ['Robert Alford', 85.3], ['Ricardo Allen', 72.5],
+            ['Desmond Trufant', 55.7], ['Duke Riley', 79.7], ['Brian Poole', 74.9],
+            ['DeVondre Campbell', 69.7]]
+    data_eagles = [['Rodney McLeod', 81.1], ['Brandon Graham', 70.2],
+                    ['Ronald Darby', 73.8], ['Sidney Jones', 73.1], ['Malcolm Jenkins', 65.9],
+                    ['Corey Graham', 60.0], ['Jordan Hicks', 58.9], ['Jalen Mills', 55.9],
+                   ['Kamu Grugier-Hill', 53.0],
+                   ['Nathan Gerry', 55.6]]
+
+    # Create the pandas DataFrame
+    df_falcons = pd.DataFrame(data_falcons, columns=['player_in_coverage', 'coverage_grade'])
+    df_eagles = pd.DataFrame(data_eagles, columns=['player_in_coverage', 'coverage_grade'])
+
+
+    colors = ['r', 'g']
+    plotDF = pd.read_csv("sample-epa-report/2018090600-epa_game_report-correct.csv")
+
+    filtered_df_falcons = plotDF.loc[plotDF['defenseTeam'] == 'ATL']
+    filtered_df_eagles = plotDF.loc[plotDF['defenseTeam'] == 'PHI']
+    filtered_df_falcons = filtered_df_falcons.loc[filtered_df_falcons['epa_play_count'] > 3]
+    filtered_df_eagles = filtered_df_eagles.loc[filtered_df_eagles['epa_play_count'] > 3]
+    merged_falcons = filtered_df_falcons.merge(df_falcons, left_on=['player_in_coverage'],
+                                               right_on=['player_in_coverage'],
+                                               how='inner')
+    merged_eagles = filtered_df_eagles.merge(df_eagles, left_on=['player_in_coverage'],
+                                               right_on=['player_in_coverage'],
+                                               how='inner')
+
+    ax = merged_eagles.plot.scatter(x = 'epa_per_targeted_play', y = 'coverage_grade')
+    merged_eagles[['epa_per_targeted_play',
+                   'coverage_grade',
+                   'player_in_coverage']].apply(lambda row: ax.text(*row), axis=1);
+
+    plt.xticks(rotation=90)
+    plt.show()
+
+    rvalue_eagles = scipy.stats.linregress(merged_eagles[['epa_per_targeted_play', 'coverage_grade']].to_numpy()).rvalue ** 2
+    rvalue_falcons = scipy.stats.linregress(merged_falcons[['epa_per_targeted_play', 'coverage_grade']].to_numpy()).rvalue ** 2
+    print("RValue - Eagles" + str(rvalue_eagles))
+    print("RValue - Falcons" + str(rvalue_falcons))
+
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    now = datetime.now()
-    calculate("2018090600")
-    print(datetime.now() - now)
+    calculate_and_plot("2018101401")
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
