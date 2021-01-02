@@ -9,6 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.stats
 import calculate_epa
+from datetime import datetime
 
 
 
@@ -60,6 +61,10 @@ def plot():
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    calculate_epa.calculate_and_plot("2018101401")
+    now = datetime.now()
+    #calculate_epa.write_epa_reports_for_player("Robert Alford")
+    #calculate_epa.calculate_and_plot("2018090600")
+    calculate_epa.generate_football_distance_for_tracking_week("week17.csv")
+    print("Time Taken: " + str((datetime.now() - now).total_seconds()))
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
