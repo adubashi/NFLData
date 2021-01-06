@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 from datetime import datetime
+import random
 
 
 offensive_positions = ['WR', 'RB', 'TE']
@@ -18,13 +19,17 @@ excluded_penalty_list = ["RPS"] #Roughing the passer
 def get_event_priority(event):
     return event_priority[event]
 
-def write_epa_reports_for_player(playerName):
-    epa_reports = calculate_epa_reports_for_player(playerName)
-    for key in epa_reports:
-        print(key)
-        epa_reports[key].to_csv(key + "-epa-game-report.csv")
+def get_list_of_players_from_pff():
+    defense_grades = pd.read_csv("nfl-big-data-bowl-2021/pff-data/defense-grades.csv")
+    position_for_analysis = "CB"
+    snap_count_filter = 550
 
-def calculate_epa_reports_for_player(playerName):
+    filtered_by_position_and_snap_count = defense_grades\
+        .query("@position_for_analysis == position")\
+        .query("snap_counts_total > @snap_count_filter")
+    return filtered_by_position_and_snap_count.player.unique()
+
+def write_modified_tracking_dataframe():
     gameListToFileName = pd.read_csv("nfl-big-data-bowl-2021/modified-tracking-data/game_list_to_file_name.csv")
     plays = pd.read_csv("nfl-big-data-bowl-2021/plays.csv", error_bad_lines=False)
     players = pd.read_csv("nfl-big-data-bowl-2021/players.csv")
@@ -32,11 +37,81 @@ def calculate_epa_reports_for_player(playerName):
     uniqueFileNames = gameListToFileName.tracking_csv_file_name.unique()
     df_list = [pd.read_csv(file) for file in uniqueFileNames]
     tracking_df = pd.concat(df_list)
-    tracking_df_with_player = tracking_df.query('displayName == @playerName')
+    tracking_df.to_csv("nfl-big-data-bowl-2021/aggregated-modified-tracking-data/aggregated-tracking-data.csv")
+
+def write_pff_with_epa_report(playerList):
+    epaReportDefenseGrades = compare_pff_with_epa_report(playerList)
+    s = "-"
+    s = s.join(playerList)
+    epaReportDefenseGrades.to_csv(s + "-epa-report.csv")
+
+def compare_pff_with_epa_report(playerList):
+    playerToEPAReport = get_merged_epa_report_for_player_list(playerList)
+    defense_grades = pd.read_csv("nfl-big-data-bowl-2021/pff-data/defense-grades.csv")
+
+    epaReportDefenseGrades = playerToEPAReport.merge(defense_grades, left_on=['displayName'],
+                                                  right_on=['player'],
+                                                  how='inner')
+    epaReportDefenseGrades_DroppedColumns = epaReportDefenseGrades[["displayName", "nflId", "position_x","defenseTeam","epa_play_count","epa","epa_per_targeted_play","player_game_count","snap_counts_total","snap_counts_coverage","grades_coverage_defense","qb_rating_against"]].copy()
+    return epaReportDefenseGrades_DroppedColumns
+
+def merge_epa_reports_for_player_list(epaReportDict):
+    dfEpaReport = epaReportDict.values()
+    epa_report_with_names = pd.concat(dfEpaReport)
+    return epa_report_with_names
+
+def write_epa_reports_for_player_list(playerList):
+    playerToEPAReport = get_merged_epa_report_for_player_list(playerList)
+    s = "-"
+    s = s.join(playerList)
+    playerToEPAReport.to_csv(s + "-epa-report.csv")
+
+def write_epa_reports_for_player(playerName):
+    df_epa_report = get_epa_report_for_player(playerName)
+    df_epa_report.to_csv(playerName + "-epa-report.csv")
+
+def get_epa_report_for_player(playerName, merged_tracking_df):
+    epa_reports = calculate_epa_reports_for_player(playerName, merged_tracking_df)
+    df_epa_report = aggregate_game_reports_for_player(epa_reports, playerName)
+    return df_epa_report
+
+def get_merged_epa_report_for_player_list(playerList):
+    merged_tracking_df = pd.read_csv("nfl-big-data-bowl-2021/aggregated-modified-tracking-data/aggregated-tracking-data.csv")
+    dfDict = {}
+    for playerName in playerList:
+            epa_report_data_frame = get_epa_report_for_player(playerName, merged_tracking_df)
+            dfDict[playerName] = epa_report_data_frame
+    return merge_epa_reports_for_player_list(dfDict)
+
+def aggregate_game_reports_for_player(epa_reports, player_Name):
+    print("Player Name during Aggregate: "+ player_Name)
+    epa_report_list = epa_reports.values()
+    if len(epa_report_list) == 0:
+       return pd.DataFrame()
+    df_epa_report = pd.concat(epa_report_list)
+    df_epa_report = df_epa_report.query("@player_Name == displayName")
+    df_epa_report = df_epa_report.groupby(['displayName', 'nflId', 'position', 'defenseTeam'])\
+        .agg({'epa': 'sum', 'epa_play_count': 'sum'}).reset_index()
+    for i, row in df_epa_report.iterrows():
+        df_epa_report.at[i, "epa_per_targeted_play"] = df_epa_report.at[i, "epa"] / df_epa_report.at[i, "epa_play_count"]
+    return df_epa_report
+
+def calculate_epa_reports_for_player(playerName, merged_tracking_df):
+    now = datetime.now()
+    gameListToFileName = pd.read_csv("nfl-big-data-bowl-2021/modified-tracking-data/game_list_to_file_name.csv")
+    plays = pd.read_csv("nfl-big-data-bowl-2021/plays.csv", error_bad_lines=False)
+    players = pd.read_csv("nfl-big-data-bowl-2021/players.csv")
+    games = pd.read_csv("nfl-big-data-bowl-2021/games.csv")
+    print("Time Taken - Reading Files: " + str((datetime.now() - now).total_seconds()))
+    now = datetime.now()
+    tracking_df_with_player = merged_tracking_df.query('displayName == @playerName')
     game_id_list = tracking_df_with_player.gameId.unique()
+    print("Time Taken - Querying for games: " + str((datetime.now() - now).total_seconds()))
     game_id_list_str = [str(i) for i in game_id_list]
     print(game_id_list_str)
-    epa_reports = calculate_epa_reports_for_player_df(tracking_df, plays, players, games, game_id_list_str, gameListToFileName)
+    now = datetime.now()
+    epa_reports = calculate_epa_reports_for_player_df(merged_tracking_df, plays, players, games, game_id_list_str, gameListToFileName)
+    print("Time Taken - Report Calc: " + str((datetime.now() - now).total_seconds()))
     return epa_reports
 
 def calculate_epa_reports_for_player_df(tracking, plays, players, games, gameIdList, gameListToFileName):
@@ -48,7 +123,8 @@ def calculate_epa_reports_for_player_df(tracking, plays, players, games, gameIdL
 
 def calculate_epa_game_report(game_id):
     gameListToFileName = pd.read_csv("nfl-big-data-bowl-2021/modified-tracking-data/game_list_to_file_name.csv")
-    tracking = pd.read_csv("nfl-big-data-bowl-2021/modified-tracking-data/week1.csv-modified-with-distance-and-coverage.csv")
+    fileNameForGameId = gameListToFileName.query("@game_id == gameId")
+    tracking = pd.read_csv(fileNameForGameId.iloc[0].at["tracking_csv_file_name"])
     plays = pd.read_csv("nfl-big-data-bowl-2021/plays.csv", error_bad_lines=False)
     players = pd.read_csv("nfl-big-data-bowl-2021/players.csv")
     games = pd.read_csv("nfl-big-data-bowl-2021/games.csv")
@@ -91,7 +167,7 @@ def calculate_epa_game_report_with_df(game_id, gameListToFileName, tracking, pla
     set_defense_and_offense_team(cleaned_play_data, games)
     print("Time Taken: - Set Home Away Team" + str((datetime.now() - now).total_seconds()))
 
-    ##Create a mapping of
+    ##Create a mapping of player by game
     now = datetime.now()
     players_by_game = create_players_by_game(tracking, cleaned_play_data)
     print("Time Taken: - Create Players By Game Map" + str((datetime.now() - now).total_seconds()))
@@ -99,7 +175,7 @@ def calculate_epa_game_report_with_df(game_id, gameListToFileName, tracking, pla
     ##Remove certain penalties and assign player in coverage to the penalized player
     now = datetime.now()
     correct_penalties(cleaned_play_data, players_by_game)
-    print("Time Taken:  -  Assign Penalities" + str((datetime.now() - now).total_seconds()))
+    print("Time Taken: - Assign Penalties" + str((datetime.now() - now).total_seconds()))
 
     ##Generate the epa data by defensive players.
     now = datetime.now()
@@ -109,7 +185,7 @@ def calculate_epa_game_report_with_df(game_id, gameListToFileName, tracking, pla
     #Write the data
     #epa_game_report.to_csv(game_id + "-" + "epa_game_report.csv")
     #joined_with_play_data.to_csv(game_id + "-" + "joined_with_play_data.csv")
-    cleaned_play_data.to_csv(game_id + "-" + "cleaned_play_data.csv")
+    #cleaned_play_data.to_csv(game_id + "-" + "cleaned_play_data.csv")
     #tracking.to_csv(game_id + "-" + "tracking_data.csv")
     #players_by_game.to_csv(game_id + "-" + "players_by_game_report.csv")
 
@@ -177,7 +253,7 @@ def generate_football_distance_for_tracking_week(filename):
     now = datetime.now()
     correct_interceptions(tracking_df)
     print("Time Taken: - Correct Interceptions: " + str((datetime.now() - now).total_seconds()))
-    tracking_df.to_csv("nfl-big-data-bowl-2021" + "/" + "modified-tracking-data/" + filename + "-modified-with-distance-and-coverage" + ".csv")
+    tracking_df.to_csv("nfl-big-data-bowl-2021" + "/" + filename + "-modified-with-distance-and-coverage" + ".csv")
 
 def generate_football_distance(tracking):
     for i, row in tracking.iterrows():
@@ -314,7 +390,7 @@ def get_cleaned_play_data(joined_with_play_data):
 
 
 def plot_game_id(plotDF):
-    plotDF = plotDF.loc[plotDF['epa_play_count'] > 3]
+    plotDF = plotDF.loc[plotDF['epa_play_count'] >= 3]
     plotDF.sort_values("epa_per_targeted_play", ascending=True)
     plotDF.plot.bar(x="player_in_coverage", y="epa_per_targeted_play", rot=0, title="EPA by Player")
     plt.xticks(rotation=90)
